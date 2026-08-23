@@ -1039,11 +1039,11 @@ function App() {
                         key={item.id}
                         className="border border-slate-200 bg-white/80 px-3 py-3"
                       >
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{index + 1}</span>
-                              <p className="truncate font-medium text-slate-900">{item.title}</p>
+                              <p className="min-w-0 flex-1 break-words font-medium text-slate-900">{item.title}</p>
                               <span className="bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-500">
                                 {item.source || "manual"}
                               </span>
@@ -1052,19 +1052,19 @@ function App() {
                               {formatThaiDate(item.date)} {item.note ? `• ${item.note}` : ""}
                             </p>
                           </div>
-                          <div className="shrink-0 text-right">
+                          <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2 sm:block sm:shrink-0 sm:border-t-0 sm:pt-0 sm:text-right">
                             <p
                               data-money
                               className={
                                 item.type === "income"
-                                  ? "text-base font-semibold text-cyan-700"
-                                  : "text-base font-semibold text-rose-600"
+                                  ? "text-sm font-semibold text-cyan-700 sm:text-base"
+                                  : "text-sm font-semibold text-rose-600 sm:text-base"
                               }
                             >
                               {item.type === "income" ? "+" : "-"}
                               {formatMoney(item.amount)}
                             </p>
-                            <div className="mt-1.5 flex justify-end gap-1.5">
+                            <div className="flex gap-1.5 sm:mt-1.5 sm:justify-end">
                               <button
                                 type="button"
                                 onClick={() => handleEditTransaction(item)}
