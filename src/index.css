@@ -1,0 +1,216 @@
+@import "tailwindcss";
+
+:root {
+  color: #ffffff;
+  background: #0b1220;
+  font-family:
+    "Sarabun",
+    "Noto Sans Thai",
+    "IBM Plex Sans Thai",
+    "Leelawadee UI",
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+  --win-bg: #0b1220;
+  --win-header: rgba(9, 15, 27, 0.88);
+  --win-surface: #121c31;
+  --win-surface-2: #16253f;
+  --win-panel: rgba(248, 250, 252, 0.94);
+  --win-line: rgba(148, 163, 184, 0.28);
+  --win-text: #0f172a;
+  --win-muted: #64748b;
+  --win-blue: #2563eb;
+  --win-teal: #0891b2;
+  --win-green: #10b981;
+  --win-orange: #f59e0b;
+  --win-red: #ef4444;
+  --win-navy: #0f172a;
+}
+
+body {
+  min-height: 100vh;
+  background: #0f172a;
+  font-family:
+    "Sarabun",
+    "Noto Sans Thai",
+    "IBM Plex Sans Thai",
+    "Leelawadee UI",
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+}
+
+button,
+[role="button"],
+select,
+input[type="checkbox"],
+.win-chip,
+.react-datepicker__day,
+.react-datepicker__month-text,
+.react-datepicker__navigation {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.privacy-blur [data-money] {
+  filter: blur(6px);
+  user-select: none;
+}
+
+.win-panel {
+  border: 1px solid var(--win-line);
+  background: var(--win-panel);
+  color: var(--win-text);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.win-panel-dark {
+  background: var(--win-surface);
+  color: #fff;
+  border-radius: 0;
+}
+
+.win-button {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--win-text);
+  border-radius: 0;
+}
+
+.win-button-primary {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #2563eb;
+  color: #fff;
+  border-radius: 0;
+}
+
+.win-button-accent {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 0;
+}
+
+.win-button-danger {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #ef4444;
+  color: #fff;
+  border-radius: 0;
+}
+
+.win-input {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--win-text);
+  border-radius: 0;
+}
+
+.win-chip {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(241, 245, 249, 0.95);
+  color: var(--win-text);
+  border-radius: 0;
+}
+
+.win-tile {
+  border-radius: 0;
+  color: #fff;
+  box-shadow: none;
+}
+
+.win-tile-income {
+  background: #0891b2;
+}
+
+.win-tile-expense {
+  background: #ef4444;
+}
+
+.win-tile-balance {
+  background: #4f46e5;
+}
+
+.react-datepicker {
+  border: 1px solid var(--win-line) !important;
+  border-radius: 0 !important;
+  font-family:
+    "Segoe UI",
+    "IBM Plex Sans Thai",
+    "Leelawadee UI",
+    system-ui,
+    sans-serif !important;
+}
+
+.react-datepicker__header {
+  background: #eff6ff !important;
+  border-bottom: 1px solid var(--win-line) !important;
+  border-radius: 0 !important;
+}
+
+.react-datepicker__current-month,
+.react-datepicker-time__header,
+.react-datepicker-year-header {
+  color: var(--win-text) !important;
+  font-weight: 600 !important;
+}
+
+.react-datepicker__day-name,
+.react-datepicker__day,
+.react-datepicker__time-name {
+  color: var(--win-text) !important;
+}
+
+.react-datepicker__day:hover,
+.react-datepicker__month-text:hover,
+.react-datepicker__quarter-text:hover,
+.react-datepicker__year-text:hover {
+  background: #dbeafe !important;
+  border-radius: 0 !important;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected,
+.react-datepicker__month-text--selected,
+.react-datepicker__month-text--keyboard-selected {
+  background: #2563eb !important;
+  color: #fff !important;
+  border-radius: 0 !important;
+}
+
+.react-datepicker__triangle {
+  display: none !important;
+}
+
+.react-datepicker-popper {
+  z-index: 40 !important;
+}
+
+.react-datepicker-wrapper,
+.react-datepicker__input-container {
+  display: block !important;
+  width: 100%;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(219, 234, 254, 0.45);
+}
+
+.data-table tfoot tr:first-child {
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.data-table tfoot tr + tr {
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.data-table tfoot td {
+  vertical-align: middle;
+}
