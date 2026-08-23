@@ -1037,7 +1037,7 @@ function App() {
                     {orderedMonthTransactions.map((item, index) => (
                       <article
                         key={item.id}
-                        className="border border-slate-200 bg-white/80 px-3 py-3"
+                        className="overflow-hidden border border-slate-200 bg-white/80 px-3 py-3"
                       >
                         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0 flex-1">
@@ -1052,7 +1052,7 @@ function App() {
                               {formatThaiDate(item.date)} {item.note ? `• ${item.note}` : ""}
                             </p>
                           </div>
-                          <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2 sm:block sm:shrink-0 sm:border-t-0 sm:pt-0 sm:text-right">
+                          <div className="flex flex-col gap-2 border-t border-slate-200 pt-2 sm:block sm:shrink-0 sm:border-t-0 sm:pt-0 sm:text-right">
                             <p
                               data-money
                               className={
@@ -1064,7 +1064,7 @@ function App() {
                               {item.type === "income" ? "+" : "-"}
                               {formatMoney(item.amount)}
                             </p>
-                            <div className="flex gap-1.5 sm:mt-1.5 sm:justify-end">
+                            <div className="flex flex-wrap gap-1.5 sm:mt-1.5 sm:justify-end">
                               <button
                                 type="button"
                                 onClick={() => handleEditTransaction(item)}
