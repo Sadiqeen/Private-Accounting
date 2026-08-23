@@ -155,6 +155,8 @@ function App() {
   const [shortcutsReady, setShortcutsReady] = useState(false);
   const [shortcutSeedRequested, setShortcutSeedRequested] = useState(false);
   const [activeMenu, setActiveMenu] = useState(() => menuIdFromPath(window.location.pathname));
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [confirmState, setConfirmState] = useState({
@@ -186,6 +188,8 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       setActiveMenu(menuIdFromPath(window.location.pathname));
+      setMobileMenuOpen(false);
+      setMobileControlsOpen(false);
     };
 
     window.addEventListener("popstate", onPopState);
@@ -383,6 +387,8 @@ function App() {
       window.history.pushState({}, "", nextPath);
     }
     setActiveMenu(menuId);
+    setMobileMenuOpen(false);
+    setMobileControlsOpen(false);
   }
 
   function applyShortcut(shortcut) {
@@ -782,30 +788,52 @@ function App() {
   return (
     <div className={privacyBlur ? "privacy-blur min-h-screen" : "min-h-screen"}>
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[rgba(9,15,27,0.88)] backdrop-blur">
-        <div className="flex w-full items-center justify-between gap-3 px-4 py-3 lg:px-6 xl:px-8">
+        <div className="flex w-full flex-col items-start gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-6 xl:px-8">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-cyan-200">Private Accounting</p>
-            <h1 className="text-base font-semibold text-white">เดือน {formatThaiMonthKey(selectedMonth)}</h1>
+            <h1 className="text-sm font-semibold leading-tight text-white sm:text-base">เดือน {formatThaiMonthKey(selectedMonth)}</h1>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex w-full items-center justify-end gap-1.5 sm:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setMobileControlsOpen(false);
+                setMobileMenuOpen((current) => !current);
+              }}
+              className="win-button px-3 py-1.5 text-xs font-medium lg:hidden"
+              aria-label="Open menu"
+            >
+              เมนู
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setMobileControlsOpen((current) => !current);
+              }}
+              className="win-button px-3 py-1.5 text-xs font-medium lg:hidden"
+              aria-label="Open controls"
+            >
+              ควบคุม
+            </button>
             <button
               type="button"
               onClick={() => setPrivacyBlur((current) => !current)}
-              className="win-button px-3 py-1.5 text-xs font-medium"
+              className="hidden px-3 py-1.5 text-xs font-medium lg:inline-block win-button"
             >
               {privacyBlur ? "Show" : "Blur"}
             </button>
             <button
               type="button"
               onClick={handleLogout}
-              className="win-button-primary px-3 py-1.5 text-xs font-medium"
+              className="hidden px-3 py-1.5 text-xs font-medium lg:inline-block win-button-primary"
             >
               Logout
             </button>
           </div>
         </div>
-        <div className="flex w-full overflow-x-auto gap-px border-t border-white/10 bg-slate-950/30 px-4 lg:px-6 xl:px-8">
+        <div className="hidden w-full overflow-x-auto gap-px border-t border-white/10 bg-slate-950/30 px-4 lg:flex lg:px-6 xl:px-8">
           {MENU_ITEMS.map((item) => (
             <button
               key={item.id}
@@ -813,8 +841,8 @@ function App() {
               onClick={() => navigateToMenu(item.id)}
               className={
                 activeMenu === item.id
-                  ? "shrink-0 bg-white px-4 py-2 text-sm font-medium text-slate-900"
-                  : "shrink-0 bg-transparent px-4 py-2 text-sm text-slate-300"
+                  ? "shrink-0 whitespace-nowrap bg-white px-3 py-2 text-sm font-medium text-slate-900"
+                  : "shrink-0 whitespace-nowrap bg-transparent px-3 py-2 text-sm text-slate-300"
               }
             >
               {item.label}
@@ -822,11 +850,147 @@ function App() {
           ))}
         </div>
       </header>
+      {mobileMenuOpen ? (
+        <div
+          className="fixed inset-0 z-30 bg-slate-950/45 lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            className="h-full w-[280px] max-w-[84vw] border-r border-white/10 bg-slate-950 px-4 py-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.25em] text-cyan-200">Menu</p>
+                <p className="mt-1 text-sm font-medium text-white">{formatThaiMonthKey(selectedMonth)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="win-button px-2.5 py-1 text-xs"
+              >
+                ปิด
+              </button>
+            </div>
+            <div className="grid gap-1.5">
+              {MENU_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => navigateToMenu(item.id)}
+                  className={
+                    activeMenu === item.id
+                      ? "bg-white px-3 py-2.5 text-left text-sm font-medium text-slate-900"
+                      : "bg-white/5 px-3 py-2.5 text-left text-sm text-slate-200"
+                  }
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {mobileControlsOpen ? (
+        <div
+          className="fixed inset-0 z-30 bg-slate-950/45 lg:hidden"
+          onClick={() => setMobileControlsOpen(false)}
+        >
+          <div
+            className="ml-auto h-full w-[280px] max-w-[84vw] border-l border-white/10 bg-slate-950 px-4 py-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.25em] text-cyan-200">Controls</p>
+                <p className="mt-1 text-sm font-medium text-white">{formatThaiMonthKey(selectedMonth)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileControlsOpen(false)}
+                className="win-button px-2.5 py-1 text-xs"
+              >
+                ปิด
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPrivacyBlur((current) => !current)}
+                className="win-button px-3 py-2 text-xs font-medium"
+              >
+                {privacyBlur ? "Show" : "Blur"}
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="win-button-primary px-3 py-2 text-xs font-medium"
+              >
+                Logout
+              </button>
+            </div>
+            {activeMenu === "dashboard" ? (
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="bg-white px-3 py-1.5 text-xs text-slate-900">
+                    {monthSummary.count} รายการ
+                  </span>
+                  <span className="bg-white/10 px-3 py-1.5 text-xs text-slate-200">
+                    shortcut {visibleShortcuts.length}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrawerOpen(true);
+                      setEditingTransactionId("");
+                      setTransactionForm(emptyTransactionForm());
+                      setMobileControlsOpen(false);
+                    }}
+                    className="win-button-primary w-full px-3 py-2 text-sm font-medium"
+                  >
+                    + เพิ่มรายการ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleGenerateTemplates();
+                      setMobileControlsOpen(false);
+                    }}
+                    className="win-button-accent w-full px-3 py-2 text-sm font-medium"
+                  >
+                    ดึง recurring
+                  </button>
+                </div>
+                <div className="mt-4">
+                  <p className="mb-2 text-[11px] uppercase tracking-[0.25em] text-cyan-200">Shortcuts</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {visibleShortcuts.map((shortcut) => (
+                      <button
+                        key={shortcut.id || shortcut.title}
+                        type="button"
+                        onClick={() => {
+                          applyShortcut(shortcut);
+                          setMobileControlsOpen(false);
+                        }}
+                        className="win-chip w-full px-3 py-1.5 text-left text-xs"
+                      >
+                        {shortcut.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {activeMenu === "dashboard" ? (
         <main className="w-full px-4 py-4 lg:px-6 xl:px-8">
           <section className="space-y-4">
-          <div className="win-panel p-3">
+          <div className="win-panel p-2.5 sm:p-3">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -872,11 +1036,8 @@ function App() {
                   >
                     เดือนนี้
                   </button>
-                  <span className="bg-slate-100 px-3 py-2 text-center text-xs text-slate-600 sm:text-left">
-                    {formatThaiMonthKey(selectedMonth)}
-                  </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="hidden flex-wrap items-center gap-2 lg:flex">
                   <span className="bg-slate-900 px-3 py-1.5 text-xs text-white">
                     {monthSummary.count} รายการ
                   </span>
@@ -886,7 +1047,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <div className="hidden grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:items-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -894,7 +1055,7 @@ function App() {
                     setEditingTransactionId("");
                     setTransactionForm(emptyTransactionForm());
                   }}
-                  className="win-button-primary w-full px-4 py-2 text-sm font-medium sm:w-auto"
+                  className="win-button-primary w-full px-3 py-2 text-sm font-medium sm:w-auto"
                 >
                   + เพิ่มรายการ
                 </button>
@@ -907,19 +1068,19 @@ function App() {
                 </button>
               </div>
             </div>
-            <div className="mt-3 border-t border-slate-200 pt-3">
+            <div className="mt-3 hidden border-t border-slate-200 pt-3 lg:block">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
                   Shortcuts
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 {visibleShortcuts.map((shortcut) => (
                   <button
                     key={shortcut.id || shortcut.title}
                     type="button"
                     onClick={() => applyShortcut(shortcut)}
-                    className="win-chip px-3 py-1.5 text-xs"
+                    className="win-chip w-full px-3 py-1.5 text-left text-xs sm:w-auto sm:text-center"
                   >
                     {shortcut.title}
                   </button>
@@ -1039,47 +1200,47 @@ function App() {
                         key={item.id}
                         className="overflow-hidden border border-slate-200 bg-white/80 px-3 py-3"
                       >
-                        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0 flex-1">
+                        <div className="flex flex-col gap-2">
+                          <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{index + 1}</span>
-                              <p className="min-w-0 flex-1 break-words font-medium text-slate-900">{item.title}</p>
+                              <p className="min-w-0 break-words font-medium text-slate-900">{item.title}</p>
                               <span className="bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-500">
                                 {item.source || "manual"}
                               </span>
                             </div>
-                            <p className="mt-0.5 text-xs text-slate-500">
+                          </div>
+                          <div className="flex items-end justify-between gap-3">
+                            <p className="text-xs text-slate-500">
                               {formatThaiDate(item.date)} {item.note ? `• ${item.note}` : ""}
                             </p>
-                          </div>
-                          <div className="flex flex-col gap-2 border-t border-slate-200 pt-2 sm:block sm:shrink-0 sm:border-t-0 sm:pt-0 sm:text-right">
                             <p
                               data-money
                               className={
                                 item.type === "income"
-                                  ? "text-sm font-semibold text-cyan-700 sm:text-base"
-                                  : "text-sm font-semibold text-rose-600 sm:text-base"
+                                  ? "text-right text-lg font-bold text-cyan-700"
+                                  : "text-right text-lg font-bold text-rose-600"
                               }
                             >
                               {item.type === "income" ? "+" : "-"}
                               {formatMoney(item.amount)}
                             </p>
-                            <div className="flex flex-wrap gap-1.5 sm:mt-1.5 sm:justify-end">
-                              <button
-                                type="button"
-                                onClick={() => handleEditTransaction(item)}
-                                className="win-button px-2.5 py-1 text-[11px]"
-                              >
-                                แก้ไข
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteTransaction(item.id)}
-                                className="win-button-danger px-2.5 py-1 text-[11px]"
-                              >
-                                ลบ
-                              </button>
-                            </div>
+                          </div>
+                          <div className="flex justify-end gap-1.5 border-t border-slate-200 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleEditTransaction(item)}
+                              className="win-button px-2.5 py-1 text-[10px] text-slate-500"
+                            >
+                              แก้ไข
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTransaction(item.id)}
+                              className="win-button-danger px-2.5 py-1 text-[10px]"
+                            >
+                              ลบ
+                            </button>
                           </div>
                         </div>
                       </article>
@@ -1208,10 +1369,10 @@ function App() {
             <div className="mt-3 grid gap-2">
               {templates.length ? (
                 templates.map((item) => (
-                  <article key={item.id} className="border border-slate-200 bg-white/80 px-3 py-2.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
+                  <article key={item.id} className="overflow-hidden border border-slate-200 bg-white/80 px-3 py-3">
+                    <div className="flex flex-col gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium text-slate-900">{item.title}</p>
                           <span className={item.active ? "bg-emerald-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-emerald-700" : "bg-slate-200 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-600"}>
                             {item.active ? "active" : "inactive"}
@@ -1220,22 +1381,25 @@ function App() {
                         <p className="text-xs text-slate-500">
                           {item.type}
                         </p>
-                        <p data-money className="text-xs text-slate-900">
+                      </div>
+                      <div className="flex items-end justify-between gap-3 border-t border-slate-200 pt-2">
+                        <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">จำนวนเงิน</span>
+                        <p data-money className="text-right text-lg font-bold text-slate-900">
                           {formatMoney(item.defaultAmount)}
                         </p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex justify-end gap-1.5 border-t border-slate-200 pt-2">
                         <button
                           type="button"
                           onClick={() => handleEditTemplate(item)}
-                          className="win-button px-3 py-1 text-xs"
+                          className="win-button px-2.5 py-1 text-[10px] text-slate-500"
                         >
                           แก้ไข
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteTemplate(item.id)}
-                          className="win-button-danger px-3 py-1 text-xs"
+                          className="win-button-danger px-2.5 py-1 text-[10px]"
                         >
                           ลบ
                         </button>
@@ -1279,10 +1443,10 @@ function App() {
             <div className="mt-3 grid gap-2">
               {shortcuts.length ? (
                 shortcuts.map((item) => (
-                  <article key={item.id} className="border border-slate-200 bg-white/80 px-3 py-2.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
+                  <article key={item.id} className="overflow-hidden border border-slate-200 bg-white/80 px-3 py-3">
+                    <div className="flex flex-col gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium text-slate-900">{item.title}</p>
                           <span className={item.active ? "bg-emerald-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-emerald-700" : "bg-slate-200 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-600"}>
                             {item.active ? "active" : "inactive"}
@@ -1291,22 +1455,25 @@ function App() {
                         <p className="text-xs text-slate-500">
                           {item.type}
                         </p>
-                        <p data-money className="text-xs text-slate-900">
+                      </div>
+                      <div className="flex items-end justify-between gap-3 border-t border-slate-200 pt-2">
+                        <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">จำนวนเงิน</span>
+                        <p data-money className="text-right text-lg font-bold text-slate-900">
                           {formatMoney(item.defaultAmount)}
                         </p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex justify-end gap-1.5 border-t border-slate-200 pt-2">
                         <button
                           type="button"
                           onClick={() => handleEditShortcut(item)}
-                          className="win-button px-3 py-1 text-xs"
+                          className="win-button px-2.5 py-1 text-[10px] text-slate-500"
                         >
                           แก้ไข
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteShortcut(item.id)}
-                          className="win-button-danger px-3 py-1 text-xs"
+                          className="win-button-danger px-2.5 py-1 text-[10px]"
                         >
                           ลบ
                         </button>
