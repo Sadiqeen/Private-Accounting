@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import {
   formatThaiDate,
   formatThaiMonthKey,
+  groupTransactionsByTag,
   groupYearByMonth,
   isValidDate,
   monthKeyFromDate,
   parseAmount,
   reorderItems,
-  reorderTemplates,
   sortByDateDesc,
   sumTransactions,
 } from "./money.js";
@@ -65,6 +65,27 @@ test("sumTransactions aggregates income, expense, balance, and count", () => {
   });
 });
 
+test("groupTransactionsByTag aggregates tagged and untagged items", () => {
+  assert.deepEqual(
+    groupTransactionsByTag([
+      { title: "ค่าเช่า", tag: "บ้าน", type: "expense", amount: 1000 },
+      { title: "คืนเงิน", tag: "บ้าน", type: "income", amount: 300 },
+      { title: "จิปาถะ", type: "expense", amount: 50 },
+    ]),
+    [
+      {
+        tag: "บ้าน",
+        total: -700,
+        count: 2,
+        items: [
+          { title: "ค่าเช่า", type: "expense", amount: 1000 },
+          { title: "คืนเงิน", type: "income", amount: 300 },
+        ],
+      },
+    ],
+  );
+});
+
 test("groupYearByMonth groups only the selected year", () => {
   const summary = groupYearByMonth(
     [
@@ -89,26 +110,6 @@ test("groupYearByMonth groups only the selected year", () => {
     balance: -400,
   });
   assert.equal(summary[11].monthKey, "2026-12");
-});
-
-test("reorderTemplates resequences items when one order changes", () => {
-  const reordered = reorderTemplates(
-    [
-      { id: "a", title: "A", order: 1 },
-      { id: "b", title: "B", order: 2 },
-      { id: "c", title: "C", order: 3 },
-    ],
-    { id: "c", title: "C", order: 1 },
-  );
-
-  assert.deepEqual(
-    reordered.map((item) => [item.id, item.order]),
-    [
-      ["c", 1],
-      ["a", 2],
-      ["b", 3],
-    ],
-  );
 });
 
 test("reorderItems appends to the end when order is missing", () => {
