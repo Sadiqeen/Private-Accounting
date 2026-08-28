@@ -93,8 +93,6 @@ export function reorderItems(items, target) {
   }));
 }
 
-export const reorderTemplates = reorderItems;
-
 export function sortByDateDesc(items) {
   return [...items].sort((left, right) => {
     if (left.date === right.date) {
@@ -120,6 +118,31 @@ export function sumTransactions(items) {
     },
     { incomeTotal: 0, expenseTotal: 0, balance: 0, count: 0 },
   );
+}
+
+export function groupTransactionsByTag(items) {
+  const groups = new Map();
+
+  for (const item of items) {
+    const tag = item.tag;
+    if (!tag) {
+      continue;
+    }
+
+    const current = groups.get(tag) || { tag, total: 0, count: 0, items: [] };
+    const signedAmount = item.type === "income" ? item.amount : -item.amount;
+
+    current.total += signedAmount;
+    current.count += 1;
+    current.items.push({
+      title: item.title,
+      type: item.type,
+      amount: item.amount,
+    });
+    groups.set(tag, current);
+  }
+
+  return [...groups.values()].sort((left, right) => left.tag.localeCompare(right.tag, "th"));
 }
 
 export function groupYearByMonth(items, year) {

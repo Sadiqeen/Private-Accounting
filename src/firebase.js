@@ -45,10 +45,6 @@ function transactionCollection(uid) {
   return collection(db, "users", uid, "transactions");
 }
 
-function templateCollection(uid) {
-  return collection(db, "users", uid, "templates");
-}
-
 function shortcutCollection(uid) {
   return collection(db, "users", uid, "shortcuts");
 }
@@ -78,7 +74,6 @@ export {
   shortcutCollection,
   signInWithPopup,
   signOut,
-  templateCollection,
   transactionCollection,
   updateDoc,
   userDoc,

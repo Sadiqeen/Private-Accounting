@@ -20,7 +20,6 @@ import {
   shortcutCollection,
   signInWithPopup,
   signOut,
-  templateCollection,
   transactionCollection,
   updateDoc,
   userDoc,
@@ -31,11 +30,11 @@ import {
   formatMoney,
   formatThaiDate,
   formatThaiMonthKey,
+  groupTransactionsByTag,
   groupYearByMonth,
   isValidDate,
   monthKeyFromDate,
   parseAmount,
-  reorderTemplates,
   sortByDateDesc,
   sumTransactions,
   todayString,
@@ -48,9 +47,28 @@ const MENU_ITEMS = [
   { id: "dashboard", label: "Dashboard", path: "/" },
   { id: "yearly", label: "สรุปทั้งปี", path: "/yearly" },
   { id: "latest", label: "ล่าสุดทั้งระบบ", path: "/latest" },
-  { id: "recurring", label: "Recurring", path: "/recurring" },
   { id: "shortcuts", label: "Shortcuts", path: "/shortcuts" },
 ];
+const TAG_TONES = [
+  "bg-cyan-50 text-cyan-700 border-cyan-100",
+  "bg-emerald-50 text-emerald-700 border-emerald-100",
+  "bg-amber-50 text-amber-700 border-amber-100",
+  "bg-rose-50 text-rose-700 border-rose-100",
+  "bg-indigo-50 text-indigo-700 border-indigo-100",
+  "bg-lime-50 text-lime-700 border-lime-100",
+];
+
+function tagTone(tag) {
+  const score = [...String(tag)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return TAG_TONES[score % TAG_TONES.length];
+}
+
+function paidButtonClass(paid, extra = "") {
+  const tone = paid
+    ? "border border-emerald-600 bg-emerald-600 text-white"
+    : "border border-amber-500 bg-amber-400 text-slate-950";
+  return `${tone} inline-flex items-center justify-center font-bold ${extra}`;
+}
 
 function emptyTransactionForm() {
   return {
@@ -59,17 +77,9 @@ function emptyTransactionForm() {
     amount: "",
     defaultAmountHint: "",
     date: todayString(),
+    tag: "",
+    paid: false,
     note: "",
-  };
-}
-
-function emptyTemplateForm() {
-  return {
-    title: "",
-    type: "expense",
-    defaultAmount: "",
-    order: "",
-    active: true,
   };
 }
 
@@ -116,6 +126,17 @@ function shiftMonthKey(monthKey, offset) {
   return toMonthKey(new Date(base.getFullYear(), base.getMonth() + offset, 1));
 }
 
+function moveDateToMonth(date, monthKey) {
+  const source = dateStringToDate(date);
+  const target = monthKeyToDate(monthKey);
+  if (!source || !target) {
+    return `${monthKey}-01`;
+  }
+
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return toDateString(new Date(target.getFullYear(), target.getMonth(), Math.min(source.getDate(), lastDay)));
+}
+
 function menuIdFromPath(pathname) {
   const match = MENU_ITEMS.find((item) => item.path === pathname);
   return match?.id || "dashboard";
@@ -137,21 +158,18 @@ function App() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [transactions, setTransactions] = useState([]);
-  const [templates, setTemplates] = useState([]);
   const [shortcuts, setShortcuts] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(todayString().slice(0, 7));
+  const [cloneSourceMonth, setCloneSourceMonth] = useState(() => shiftMonthKey(todayString().slice(0, 7), -1));
   const [transactionForm, setTransactionForm] = useState(emptyTransactionForm);
-  const [templateForm, setTemplateForm] = useState(emptyTemplateForm);
   const [shortcutForm, setShortcutForm] = useState(emptyShortcutForm);
   const [editingTransactionId, setEditingTransactionId] = useState("");
-  const [editingTemplateId, setEditingTemplateId] = useState("");
   const [editingShortcutId, setEditingShortcutId] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [shortcutModalOpen, setShortcutModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [templateSaving, setTemplateSaving] = useState(false);
   const [shortcutSaving, setShortcutSaving] = useState(false);
+  const [cloneSaving, setCloneSaving] = useState(false);
   const [shortcutsReady, setShortcutsReady] = useState(false);
   const [shortcutSeedRequested, setShortcutSeedRequested] = useState(false);
   const [activeMenu, setActiveMenu] = useState(() => menuIdFromPath(window.location.pathname));
@@ -197,6 +215,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    setCloneSourceMonth(shiftMonthKey(selectedMonth, -1));
+  }, [selectedMonth]);
+
+  useEffect(() => {
     if (!auth) {
       setAuthReady(true);
       return undefined;
@@ -211,7 +233,6 @@ function App() {
   useEffect(() => {
     if (!user) {
       setTransactions([]);
-      setTemplates([]);
       setShortcuts([]);
       setShortcutsReady(false);
       setShortcutSeedRequested(false);
@@ -228,29 +249,6 @@ function App() {
               amount: Number(item.amount || 0),
             })),
           ),
-        );
-      },
-      (snapshotError) => setError(explainFirebaseError(snapshotError.message)),
-    );
-
-    const unsubTemplates = onSnapshot(
-      query(templateCollection(user.uid)),
-      (snapshot) => {
-        setTemplates(
-          snapshot.docs
-            .map(normalizeDoc)
-            .map((item) => ({
-              ...item,
-              defaultAmount: Number(item.defaultAmount || 0),
-              order: Number(item.order || 0),
-            }))
-            .sort((left, right) => {
-              if (left.order === right.order) {
-                return left.title.localeCompare(right.title, "th");
-              }
-
-              return left.order - right.order;
-            }),
         );
       },
       (snapshotError) => setError(explainFirebaseError(snapshotError.message)),
@@ -276,7 +274,6 @@ function App() {
 
     return () => {
       unsubTransactions();
-      unsubTemplates();
       unsubShortcuts();
     };
   }, [user]);
@@ -284,15 +281,15 @@ function App() {
   const monthTransactions = transactions.filter(
     (item) => item.monthKey === selectedMonth,
   );
-  const templateOrderById = new Map(
-    templates.map((item) => [item.id, Number(item.order || 0)]),
+  const cloneSourceTransactions = transactions.filter(
+    (item) => item.monthKey === cloneSourceMonth,
   );
   const orderedMonthTransactions = [...monthTransactions].sort((left, right) => {
     const leftTemplateOrder = left.source === "template"
-      ? Number(left.templateOrder || templateOrderById.get(left.templateId) || Number.MAX_SAFE_INTEGER)
+      ? Number(left.templateOrder || Number.MAX_SAFE_INTEGER)
       : Number.MAX_SAFE_INTEGER;
     const rightTemplateOrder = right.source === "template"
-      ? Number(right.templateOrder || templateOrderById.get(right.templateId) || Number.MAX_SAFE_INTEGER)
+      ? Number(right.templateOrder || Number.MAX_SAFE_INTEGER)
       : Number.MAX_SAFE_INTEGER;
 
     if (leftTemplateOrder !== rightTemplateOrder) {
@@ -305,9 +302,20 @@ function App() {
 
     return (left.createdAt?.seconds || 0) - (right.createdAt?.seconds || 0);
   });
+  const pendingExpenses = orderedMonthTransactions.filter(
+    (item) => item.type === "expense" && !item.paid,
+  );
+  const pendingExpenseTotal = pendingExpenses.reduce(
+    (total, item) => total + Number(item.amount || 0),
+    0,
+  );
   const monthSummary = sumTransactions(monthTransactions);
+  const tagSummary = groupTransactionsByTag(monthTransactions);
   const yearSummary = groupYearByMonth(transactions, monthInputToYear(selectedMonth));
   const visibleShortcuts = shortcuts.filter((item) => item.active);
+  const tagOptions = Array.from(
+    new Set(transactions.map((item) => item.tag).filter(Boolean)),
+  ).sort((left, right) => left.localeCompare(right, "th"));
   const amountPlaceholder = transactionForm.amount
     ? "จำนวนเงิน"
     : transactionForm.defaultAmountHint || "จำนวนเงิน";
@@ -373,10 +381,6 @@ function App() {
     setTransactionForm((current) => ({ ...current, [field]: value }));
   }
 
-  function updateTemplateForm(field, value) {
-    setTemplateForm((current) => ({ ...current, [field]: value }));
-  }
-
   function updateShortcutForm(field, value) {
     setShortcutForm((current) => ({ ...current, [field]: value }));
   }
@@ -406,12 +410,6 @@ function App() {
     setEditingTransactionId("");
     setTransactionForm(emptyTransactionForm());
     setDrawerOpen(false);
-  }
-
-  function resetTemplateEditor() {
-    setEditingTemplateId("");
-    setTemplateForm(emptyTemplateForm());
-    setTemplateModalOpen(false);
   }
 
   function resetShortcutEditor() {
@@ -464,6 +462,8 @@ function App() {
         amount,
         date: transactionForm.date,
         monthKey: monthKeyFromDate(transactionForm.date),
+        tag: transactionForm.tag.trim(),
+        paid: transactionForm.type === "expense" ? Boolean(transactionForm.paid) : false,
         note: transactionForm.note.trim(),
         updatedAt: serverTimestamp(),
       };
@@ -498,10 +498,27 @@ function App() {
       title: item.title,
       amount: String(item.amount),
       date: item.date,
+      tag: item.tag || "",
+      paid: Boolean(item.paid),
       note: item.note || "",
       defaultAmountHint: "",
     });
     setDrawerOpen(true);
+  }
+
+  async function handleTogglePaid(item) {
+    if (item.type !== "expense") {
+      return;
+    }
+
+    try {
+      await updateDoc(doc(transactionCollection(user.uid), item.id), {
+        paid: !Boolean(item.paid),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (saveError) {
+      setError(explainFirebaseError(saveError.message));
+    }
   }
 
   async function handleDeleteTransaction(id) {
@@ -517,112 +534,42 @@ function App() {
     });
   }
 
-  async function handleSaveTemplate(event) {
-    event.preventDefault();
-    setTemplateSaving(true);
+  async function handleCloneMonth() {
+    setCloneSaving(true);
     setError("");
     setFeedback("");
 
     try {
-      const defaultAmount = parseAmount(templateForm.defaultAmount);
-      if (!templateForm.title.trim()) {
-        throw new Error("กรุณากรอกชื่อ template");
-      }
-      if (defaultAmount <= 0) {
-        throw new Error("จำนวนเงิน template ต้องมากกว่า 0");
+      if (!cloneSourceTransactions.length) {
+        throw new Error(`${formatThaiMonthKey(cloneSourceMonth)} ไม่มีรายการให้ clone`);
       }
 
-      const payload = {
-        userId: user.uid,
-        title: templateForm.title.trim(),
-        type: templateForm.type,
-        defaultAmount,
-        order: Number(templateForm.order || 0),
-        active: Boolean(templateForm.active),
-      };
-
-      const existingTemplate = templates.find((item) => item.id === editingTemplateId);
-      const templateRef = editingTemplateId
-        ? doc(templateCollection(user.uid), editingTemplateId)
-        : doc(templateCollection(user.uid));
-      const reordered = reorderTemplates(templates, {
-        ...(existingTemplate || {}),
-        id: templateRef.id,
-        ...payload,
-      });
       const batch = writeBatch(db);
-
-      for (const item of reordered) {
-        const ref = doc(templateCollection(user.uid), item.id);
-        const current = templates.find((template) => template.id === item.id);
-
-        if (!current) {
-          batch.set(ref, {
-            userId: user.uid,
-            title: item.title,
-            type: item.type,
-            defaultAmount: item.defaultAmount,
-            order: item.order,
-            active: item.active,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          continue;
-        }
-
-        if (
-          current.title !== item.title ||
-          current.type !== item.type ||
-          current.defaultAmount !== item.defaultAmount ||
-          current.order !== item.order ||
-          Boolean(current.active) !== Boolean(item.active)
-        ) {
-          batch.update(ref, {
-            userId: user.uid,
-            title: item.title,
-            type: item.type,
-            defaultAmount: item.defaultAmount,
-            order: item.order,
-            active: item.active,
-            updatedAt: serverTimestamp(),
-          });
-        }
+      for (const item of cloneSourceTransactions) {
+        const nextDate = moveDateToMonth(item.date, selectedMonth);
+        batch.set(doc(transactionCollection(user.uid)), {
+          userId: user.uid,
+          type: item.type,
+          title: item.title,
+          amount: Number(item.amount || 0),
+          date: nextDate,
+          monthKey: selectedMonth,
+          note: item.note || "",
+          tag: item.tag || "",
+          paid: false,
+          source: "manual",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       }
 
       await batch.commit();
-      setFeedback(editingTemplateId ? "อัปเดต template แล้ว" : "เพิ่ม template แล้ว");
-
-      resetTemplateEditor();
-    } catch (saveError) {
-      setError(explainFirebaseError(saveError.message));
+      setFeedback(`clone ${cloneSourceTransactions.length} รายการแล้ว`);
+    } catch (cloneError) {
+      setError(explainFirebaseError(cloneError.message));
     } finally {
-      setTemplateSaving(false);
+      setCloneSaving(false);
     }
-  }
-
-  function handleEditTemplate(item) {
-    setEditingTemplateId(item.id);
-    setTemplateForm({
-      title: item.title,
-      type: item.type,
-      defaultAmount: String(item.defaultAmount),
-      order: String(item.order || 0),
-      active: Boolean(item.active),
-    });
-    setTemplateModalOpen(true);
-  }
-
-  async function handleDeleteTemplate(id) {
-    openConfirm("ลบ recurring นี้ใช่ไหม", async () => {
-      try {
-        await deleteDoc(doc(templateCollection(user.uid), id));
-        setFeedback("ลบ template แล้ว");
-      } catch (deleteError) {
-        setError(explainFirebaseError(deleteError.message));
-      } finally {
-        closeConfirm();
-      }
-    });
   }
 
   async function handleSaveShortcut(event) {
@@ -691,54 +638,6 @@ function App() {
         closeConfirm();
       }
     });
-  }
-
-  async function handleGenerateTemplates() {
-    setError("");
-    setFeedback("");
-
-    try {
-      const stampDate = todayString();
-      const stampMonthKey = monthKeyFromDate(stampDate);
-      const existing = await getDocs(query(transactionCollection(user.uid)));
-      const existingKeys = new Set(
-        existing.docs.map((snapshot) => {
-          const item = normalizeDoc(snapshot);
-          return `${item.monthKey}:${item.templateId || ""}`;
-        }),
-      );
-
-      const activeTemplates = templates.filter((item) => item.active);
-      let createdCount = 0;
-
-      for (const template of activeTemplates) {
-        const templateKey = `${stampMonthKey}:${template.id}`;
-        if (existingKeys.has(templateKey)) {
-          continue;
-        }
-
-        await addDoc(transactionCollection(user.uid), {
-          userId: user.uid,
-          type: template.type,
-          title: template.title,
-          amount: template.defaultAmount,
-          date: stampDate,
-          monthKey: stampMonthKey,
-          note: "",
-          source: "template",
-          templateId: template.id,
-          templateOrder: Number(template.order || 0),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        createdCount += 1;
-      }
-
-      setSelectedMonth(stampMonthKey);
-      setFeedback(createdCount ? `สร้าง ${createdCount} รายการแล้ว` : "เดือนนี้สร้างครบแล้ว");
-    } catch (generateError) {
-      setError(explainFirebaseError(generateError.message));
-    }
   }
 
   if (!hasFirebaseConfig) {
@@ -850,6 +749,11 @@ function App() {
           ))}
         </div>
       </header>
+      <datalist id="transaction-tags">
+        {tagOptions.map((tag) => (
+          <option key={tag} value={tag} />
+        ))}
+      </datalist>
       {mobileMenuOpen ? (
         <div
           className="fixed inset-0 z-30 bg-slate-950/45 lg:hidden"
@@ -939,7 +843,7 @@ function App() {
                     shortcut {visibleShortcuts.length}
                   </span>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="mt-3 grid gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -951,16 +855,6 @@ function App() {
                     className="win-button-primary w-full px-3 py-2 text-sm font-medium"
                   >
                     + เพิ่มรายการ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleGenerateTemplates();
-                      setMobileControlsOpen(false);
-                    }}
-                    className="win-button-accent w-full px-3 py-2 text-sm font-medium"
-                  >
-                    ดึง recurring
                   </button>
                 </div>
                 <div className="mt-4">
@@ -1059,13 +953,6 @@ function App() {
                 >
                   + เพิ่มรายการ
                 </button>
-                <button
-                  type="button"
-                  onClick={handleGenerateTemplates}
-                  className="win-button-accent w-full px-3 py-2 text-sm font-medium sm:w-auto"
-                >
-                  ดึง recurring
-                </button>
               </div>
             </div>
             <div className="mt-3 hidden border-t border-slate-200 pt-3 lg:block">
@@ -1095,6 +982,7 @@ function App() {
             <SummaryCard label="คงเหลือ" value={monthSummary.balance} tone="balance" />
           </div>
 
+          <div className={tagSummary.length || pendingExpenses.length ? "grid gap-4 lg:grid-cols-[2fr_1fr] lg:items-start" : ""}>
           <div className="win-panel p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -1117,6 +1005,9 @@ function App() {
                         <thead className="text-left text-slate-500">
                           <tr className="border-b border-slate-200">
                             <th className="pb-2 pr-3 font-medium">#</th>
+                            <th className="pb-2 pr-3 text-center font-medium">สถานะ</th>
+                            <th className="pb-2 pr-3 font-medium">วันที่</th>
+                            <th className="pb-2 pr-3 font-medium">แท็ก</th>
                             <th className="pb-2 pr-3 font-medium">รายการ</th>
                             <th className="pb-2 pr-3 text-right font-medium">รายรับ</th>
                             <th className="pb-2 pr-3 text-right font-medium">รายจ่าย</th>
@@ -1127,18 +1018,31 @@ function App() {
                           {orderedMonthTransactions.map((item, index) => (
                             <tr key={item.id} className="border-b border-slate-100 align-middle">
                               <td className="py-2 pr-3 text-slate-500">{index + 1}</td>
+                              <td className="py-2 pr-3 text-center">
+                                {item.type === "expense" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePaid(item)}
+                                    title={item.paid ? "จ่ายแล้ว" : "รอจ่าย"}
+                                    aria-label={item.paid ? "จ่ายแล้ว" : "รอจ่าย"}
+                                    className={paidButtonClass(item.paid, "mx-auto h-4 w-4 text-[9px]")}
+                                  >
+                                    {item.paid ? "✓" : "!"}
+                                  </button>
+                                ) : "-"}
+                              </td>
+                              <td className="py-2 pr-3 text-slate-600">{formatThaiDate(item.date)}</td>
+                              <td className="py-2 pr-3">
+                                {item.tag ? (
+                                  <span className={`inline-block max-w-28 break-words border px-2 py-1 text-[11px] ${tagTone(item.tag)}`}>
+                                    {item.tag}
+                                  </span>
+                                ) : "-"}
+                              </td>
                               <td className="py-2 pr-3">
                                 <div className="flex items-start gap-2">
                                   <div className="min-w-0">
                                     <p className="font-medium text-slate-900">{item.title}</p>
-                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                      <span className="bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
-                                        {formatThaiDate(item.date)}
-                                      </span>
-                                      <span className="bg-slate-100 px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-slate-600">
-                                        {item.source || "manual"}
-                                      </span>
-                                    </div>
                                   </div>
                                   {item.note ? (
                                     <span
@@ -1180,6 +1084,9 @@ function App() {
                         <tfoot>
                           <tr className="border-t-2 border-slate-200 align-middle">
                             <td className="py-3 pr-3" />
+                            <td className="py-3 pr-3" />
+                            <td className="py-3 pr-3" />
+                            <td className="py-3 pr-3" />
                             <td className="py-3 pr-6 text-right font-semibold text-slate-700">รวม</td>
                             <td data-money className="py-3 pr-3 text-right font-semibold text-cyan-700">
                               {formatMoney(monthSummary.incomeTotal)}
@@ -1205,9 +1112,11 @@ function App() {
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{index + 1}</span>
                               <p className="min-w-0 break-words font-medium text-slate-900">{item.title}</p>
-                              <span className="bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                {item.source || "manual"}
-                              </span>
+                              {item.tag ? (
+                                <span className={`border px-2 py-0.5 text-[10px] ${tagTone(item.tag)}`}>
+                                  {item.tag}
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                           <div className="flex items-end justify-between gap-3">
@@ -1226,6 +1135,17 @@ function App() {
                               {formatMoney(item.amount)}
                             </p>
                           </div>
+                          {item.type === "expense" ? (
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePaid(item)}
+                              title={item.paid ? "จ่ายแล้ว" : "รอจ่าย"}
+                              aria-label={item.paid ? "จ่ายแล้ว" : "รอจ่าย"}
+                              className={paidButtonClass(item.paid, "h-5 w-5 text-[9px]")}
+                            >
+                              {item.paid ? "✓" : "!"}
+                            </button>
+                          ) : null}
                           <div className="flex justify-end gap-1.5 border-t border-slate-200 pt-2">
                             <button
                               type="button"
@@ -1250,9 +1170,143 @@ function App() {
               ) : (
                 <EmptyState
                   title="ยังไม่มีรายการของเดือนนี้"
-                />
+                >
+                  <div className="mx-auto mt-3 max-w-xs">
+                    <DatePicker
+                      selected={monthKeyToDate(cloneSourceMonth)}
+                      onChange={(date) => {
+                        if (date) {
+                          setCloneSourceMonth(toMonthKey(date));
+                        }
+                      }}
+                      locale="th"
+                      dateFormat="MMMM yyyy"
+                      showMonthYearPicker
+                      customInput={
+                        <PickerButton
+                          className="win-input w-full px-3 py-2 text-center text-sm font-medium"
+                          placeholder="เลือกเดือนที่จะ clone"
+                        />
+                      }
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloneMonth}
+                    disabled={cloneSaving}
+                    className="win-button-primary mt-3 px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {cloneSaving ? "กำลัง clone..." : `Clone จาก ${formatThaiMonthKey(cloneSourceMonth)}`}
+                  </button>
+                </EmptyState>
               )}
             </div>
+          </div>
+
+          {tagSummary.length || pendingExpenses.length ? (
+            <div className="space-y-4">
+              {pendingExpenses.length ? (
+                <div className="win-panel p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-[#10324d]">รอจ่าย</h2>
+                    <span className="bg-amber-400 px-3 py-1 text-xs font-medium text-slate-950">
+                      {formatMoney(pendingExpenseTotal)}
+                    </span>
+                  </div>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full text-xs data-table">
+                      <thead className="text-left text-slate-500">
+                        <tr className="border-b border-slate-200">
+                          <th className="pb-2 pr-3 font-medium">วันที่</th>
+                          <th className="pb-2 pr-3 font-medium">แท็ก</th>
+                          <th className="pb-2 pr-3 font-medium">รายการ</th>
+                          <th className="pb-2 text-right font-medium">จำนวนเงิน</th>
+                          <th className="pb-2 text-right font-medium">อัปเดต</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingExpenses.map((item) => (
+                          <tr key={item.id} className="border-b border-slate-100">
+                            <td className="py-2 pr-3 text-slate-600">{formatThaiDate(item.date)}</td>
+                            <td className="py-2 pr-3">
+                              {item.tag ? (
+                                <span className={`inline-block max-w-24 break-words border px-2 py-1 text-[11px] ${tagTone(item.tag)}`}>
+                                  {item.tag}
+                                </span>
+                              ) : "-"}
+                            </td>
+                            <td className="py-2 pr-3 font-medium text-slate-900">{item.title}</td>
+                            <td data-money className="py-2 text-right font-semibold text-rose-600">
+                              {formatMoney(item.amount)}
+                            </td>
+                            <td className="py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePaid(item)}
+                                title="เปลี่ยนเป็นจ่ายแล้ว"
+                                aria-label="เปลี่ยนเป็นจ่ายแล้ว"
+                                className="ml-auto border border-emerald-600 bg-emerald-600 px-2 py-1 text-[10px] font-medium text-white"
+                              >
+                                จ่ายแล้ว
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              {tagSummary.length ? (
+                <div className="win-panel p-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-[#10324d]">สรุปตามแท็ก</h2>
+                <span className="bg-slate-900 px-3 py-1 text-xs text-white">
+                  {tagSummary.length} แท็ก
+                </span>
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-xs data-table">
+                  <thead className="text-left text-slate-500">
+                    <tr className="border-b border-slate-200">
+                      <th className="w-32 pb-2 pr-3 font-medium">แท็ก</th>
+                      <th className="pb-2 pr-3 font-medium">รายการ</th>
+                      <th className="pb-2 text-right font-medium">ยอดรวม</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tagSummary.map((item) => (
+                      <tr key={item.tag} className="border-b border-slate-100">
+                        <td className="w-32 py-2 pr-3 align-top">
+                          <span className={`inline-block max-w-full break-words border px-2 py-1 text-[11px] ${tagTone(item.tag)}`}>
+                            {item.tag}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            {item.items.map((tagItem, index) => (
+                              <span key={`${tagItem.title}-${index}`} className="bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
+                                {tagItem.title} {formatMoney(tagItem.amount)}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td
+                          data-money
+                          className={item.total >= 0 ? "py-2 text-right font-semibold text-cyan-700" : "py-2 text-right font-semibold text-rose-600"}
+                        >
+                          {formatMoney(Math.abs(item.total))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+              ) : null}
+            </div>
+          ) : null}
           </div>
 
           </section>
@@ -1318,6 +1372,7 @@ function App() {
                       <p className="truncate font-medium text-slate-900">{item.title}</p>
                       <p className="text-xs text-slate-500">
                         {formatThaiDate(item.date)} • {item.type}
+                        {item.tag ? ` • ${item.tag}` : ""}
                       </p>
                     </div>
                     <p
@@ -1335,80 +1390,6 @@ function App() {
                 ))
               ) : (
                 <EmptyState title="ยังไม่มีรายการ" />
-              )}
-            </div>
-          </section>
-        </main>
-      ) : null}
-
-      {activeMenu === "recurring" ? (
-        <main className="w-full px-4 py-4 lg:px-6 xl:px-8">
-          <section className="win-panel p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">Recurring</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="bg-slate-900 px-3 py-1 text-xs text-white">
-                  {templates.length} items
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingTemplateId("");
-                    setTemplateForm(emptyTemplateForm());
-                    setTemplateModalOpen(true);
-                  }}
-                  className="win-button-primary px-3 py-1 text-xs font-medium"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-2">
-              {templates.length ? (
-                templates.map((item) => (
-                  <article key={item.id} className="overflow-hidden border border-slate-200 bg-white/80 px-3 py-3">
-                    <div className="flex flex-col gap-2">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium text-slate-900">{item.title}</p>
-                          <span className={item.active ? "bg-emerald-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-emerald-700" : "bg-slate-200 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-600"}>
-                            {item.active ? "active" : "inactive"}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          {item.type}
-                        </p>
-                      </div>
-                      <div className="flex items-end justify-between gap-3 border-t border-slate-200 pt-2">
-                        <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">จำนวนเงิน</span>
-                        <p data-money className="text-right text-lg font-bold text-slate-900">
-                          {formatMoney(item.defaultAmount)}
-                        </p>
-                      </div>
-                      <div className="flex justify-end gap-1.5 border-t border-slate-200 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => handleEditTemplate(item)}
-                          className="win-button px-2.5 py-1 text-[10px] text-slate-500"
-                        >
-                          แก้ไข
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTemplate(item.id)}
-                          className="win-button-danger px-2.5 py-1 text-[10px]"
-                        >
-                          ลบ
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <EmptyState title="ยังไม่มี template" />
               )}
             </div>
           </section>
@@ -1562,6 +1543,14 @@ function App() {
                 className="win-input w-full px-3 py-2.5 text-sm"
               />
               <input
+                type="text"
+                value={transactionForm.tag}
+                onChange={(event) => updateTransactionForm("tag", event.target.value)}
+                placeholder="แท็ก"
+                list="transaction-tags"
+                className="win-input w-full px-3 py-2.5 text-sm"
+              />
+              <input
                 type="number"
                 min="0"
                 step="0.01"
@@ -1607,82 +1596,6 @@ function App() {
         </div>
       ) : null}
 
-      {templateModalOpen ? (
-        <div className="fixed inset-0 z-30 flex items-end bg-[#083a5d]/55 lg:items-center lg:justify-center">
-          <div className="win-panel w-full p-4 lg:max-w-md">
-            <div className="mx-auto mb-3 h-1.5 w-14 bg-[#7db9de] lg:hidden" />
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-[#10324d]">
-                {editingTemplateId ? "แก้ไข recurring" : "Add recurring"}
-              </h2>
-              <button
-                type="button"
-                onClick={resetTemplateEditor}
-                className="win-button px-3 py-1 text-xs"
-              >
-                ปิด
-              </button>
-            </div>
-            <form className="mt-3 space-y-2.5" onSubmit={handleSaveTemplate}>
-              <input
-                type="text"
-                value={templateForm.title}
-                onChange={(event) => updateTemplateForm("title", event.target.value)}
-                placeholder="ชื่อ template"
-                className="win-input w-full px-3 py-2 text-sm"
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <select
-                  value={templateForm.type}
-                  onChange={(event) => updateTemplateForm("type", event.target.value)}
-                  className="win-input px-3 py-2 text-sm"
-                >
-                  <option value="expense">expense</option>
-                  <option value="income">income</option>
-                </select>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  pattern="[0-9]*"
-                  value={templateForm.defaultAmount}
-                  onChange={(event) => updateTemplateForm("defaultAmount", event.target.value)}
-                  placeholder="จำนวนเงิน"
-                  className="win-input px-3 py-2 text-sm"
-                />
-              </div>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={templateForm.order}
-                onChange={(event) => updateTemplateForm("order", event.target.value)}
-                placeholder="order"
-                className="win-input w-full px-3 py-2 text-sm"
-              />
-              <label className="win-input flex items-center gap-2 px-3 py-2 text-sm text-[#10324d]">
-                <input
-                  type="checkbox"
-                  checked={templateForm.active}
-                  onChange={(event) => updateTemplateForm("active", event.target.checked)}
-                />
-                active
-              </label>
-              <button
-                type="submit"
-                disabled={templateSaving}
-                className="win-button-primary w-full px-4 py-2.5 text-sm font-medium disabled:opacity-60"
-              >
-                {editingTemplateId ? "Save Template" : "Add Template"}
-              </button>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
       {shortcutModalOpen ? (
         <div className="fixed inset-0 z-30 flex items-end bg-[#083a5d]/55 lg:items-center lg:justify-center">
           <div className="win-panel w-full p-4 lg:max-w-md">
@@ -1711,7 +1624,7 @@ function App() {
                 <select
                   value={shortcutForm.type}
                   onChange={(event) => updateShortcutForm("type", event.target.value)}
-                  className="win-input px-3 py-2 text-sm"
+                  className="win-input win-select px-3 py-2 text-sm"
                 >
                   <option value="expense">expense</option>
                   <option value="income">income</option>
@@ -1818,10 +1731,11 @@ function SummaryCard({ label, value, tone }) {
   );
 }
 
-function EmptyState({ title }) {
+function EmptyState({ title, children }) {
   return (
     <div className="border border-dashed border-[#7db9de] bg-[#eef6fb] px-4 py-6 text-center">
       <p className="font-medium text-[#10324d]">{title}</p>
+      {children}
     </div>
   );
 }
