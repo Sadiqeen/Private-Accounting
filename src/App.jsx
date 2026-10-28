@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import DatePicker, { registerLocale } from "react-datepicker";
 import th from "date-fns/locale/th";
 import "react-datepicker/dist/react-datepicker.css";
@@ -39,6 +39,7 @@ import {
   sumTransactions,
   todayString,
 } from "./money.js";
+import { buildClonePlan, clonePayload, defaultCloneSelection } from "./clone.js";
 
 registerLocale("th", th);
 
@@ -126,17 +127,6 @@ function shiftMonthKey(monthKey, offset) {
   return toMonthKey(new Date(base.getFullYear(), base.getMonth() + offset, 1));
 }
 
-function moveDateToMonth(date, monthKey) {
-  const source = dateStringToDate(date);
-  const target = monthKeyToDate(monthKey);
-  if (!source || !target) {
-    return `${monthKey}-01`;
-  }
-
-  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-  return toDateString(new Date(target.getFullYear(), target.getMonth(), Math.min(source.getDate(), lastDay)));
-}
-
 function menuIdFromPath(pathname) {
   const match = MENU_ITEMS.find((item) => item.path === pathname);
   return match?.id || "dashboard";
@@ -170,6 +160,8 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [shortcutSaving, setShortcutSaving] = useState(false);
   const [cloneSaving, setCloneSaving] = useState(false);
+  const [cloneModalOpen, setCloneModalOpen] = useState(false);
+  const [cloneSelection, setCloneSelection] = useState(() => new Set());
   const [shortcutsReady, setShortcutsReady] = useState(false);
   const [shortcutSeedRequested, setShortcutSeedRequested] = useState(false);
   const [activeMenu, setActiveMenu] = useState(() => menuIdFromPath(window.location.pathname));
@@ -281,9 +273,11 @@ function App() {
   const monthTransactions = transactions.filter(
     (item) => item.monthKey === selectedMonth,
   );
-  const cloneSourceTransactions = transactions.filter(
-    (item) => item.monthKey === cloneSourceMonth,
-  );
+  const cloneSourceTransactions = transactions
+    .filter((item) => item.monthKey === cloneSourceMonth)
+    .sort((left, right) => left.date.localeCompare(right.date) || (left.createdAt?.seconds || 0) - (right.createdAt?.seconds || 0));
+  const clonePlan = buildClonePlan(cloneSourceTransactions, monthTransactions, selectedMonth);
+  const cloneSelectedCount = clonePlan.filter((row) => cloneSelection.has(row.item.id)).length;
   const orderedMonthTransactions = [...monthTransactions].sort((left, right) => {
     const leftTemplateOrder = left.source === "template"
       ? Number(left.templateOrder || Number.MAX_SAFE_INTEGER)
@@ -534,37 +528,57 @@ function App() {
     });
   }
 
+  // Pick the source month and pre-tick everything that isn't already in the month being viewed.
+  function selectCloneSource(monthKey) {
+    setCloneSourceMonth(monthKey);
+    setCloneSelection(defaultCloneSelection(buildClonePlan(
+      transactions.filter((item) => item.monthKey === monthKey),
+      monthTransactions,
+      selectedMonth,
+    )));
+  }
+
+  function openCloneModal() {
+    selectCloneSource(shiftMonthKey(selectedMonth, -1));
+    setMobileControlsOpen(false);
+    setCloneModalOpen(true);
+  }
+
+  function toggleCloneItem(id) {
+    setCloneSelection((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
   async function handleCloneMonth() {
     setCloneSaving(true);
     setError("");
     setFeedback("");
 
     try {
-      if (!cloneSourceTransactions.length) {
-        throw new Error(`${formatThaiMonthKey(cloneSourceMonth)} ไม่มีรายการให้ clone`);
+      const selected = clonePlan.filter((row) => cloneSelection.has(row.item.id)).map((row) => row.item);
+      if (!selected.length) {
+        throw new Error("เลือกรายการที่จะ clone ก่อน");
       }
 
       const batch = writeBatch(db);
-      for (const item of cloneSourceTransactions) {
-        const nextDate = moveDateToMonth(item.date, selectedMonth);
+      for (const item of selected) {
         batch.set(doc(transactionCollection(user.uid)), {
-          userId: user.uid,
-          type: item.type,
-          title: item.title,
-          amount: Number(item.amount || 0),
-          date: nextDate,
-          monthKey: selectedMonth,
-          note: item.note || "",
-          tag: item.tag || "",
-          paid: false,
-          source: "manual",
+          ...clonePayload(item, selectedMonth, user.uid),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
       }
 
       await batch.commit();
-      setFeedback(`clone ${cloneSourceTransactions.length} รายการแล้ว`);
+      setFeedback(`clone ${selected.length} รายการไป ${formatThaiMonthKey(selectedMonth)} แล้ว`);
+      setCloneModalOpen(false);
     } catch (cloneError) {
       setError(explainFirebaseError(cloneError.message));
     } finally {
@@ -749,11 +763,6 @@ function App() {
           ))}
         </div>
       </header>
-      <datalist id="transaction-tags">
-        {tagOptions.map((tag) => (
-          <option key={tag} value={tag} />
-        ))}
-      </datalist>
       {mobileMenuOpen ? (
         <div
           className="fixed inset-0 z-30 bg-slate-950/45 lg:hidden"
@@ -856,6 +865,13 @@ function App() {
                   >
                     + เพิ่มรายการ
                   </button>
+                  <button
+                    type="button"
+                    onClick={openCloneModal}
+                    className="win-button w-full px-3 py-2 text-sm font-medium"
+                  >
+                    Clone จากเดือนอื่น
+                  </button>
                 </div>
                 <div className="mt-4">
                   <p className="mb-2 text-[11px] uppercase tracking-[0.25em] text-cyan-200">Shortcuts</p>
@@ -952,6 +968,13 @@ function App() {
                   className="win-button-primary w-full px-3 py-2 text-sm font-medium sm:w-auto"
                 >
                   + เพิ่มรายการ
+                </button>
+                <button
+                  type="button"
+                  onClick={openCloneModal}
+                  className="win-button w-full px-3 py-2 text-sm font-medium sm:w-auto"
+                >
+                  Clone จากเดือนอื่น
                 </button>
               </div>
             </div>
@@ -1171,32 +1194,12 @@ function App() {
                 <EmptyState
                   title="ยังไม่มีรายการของเดือนนี้"
                 >
-                  <div className="mx-auto mt-3 max-w-xs">
-                    <DatePicker
-                      selected={monthKeyToDate(cloneSourceMonth)}
-                      onChange={(date) => {
-                        if (date) {
-                          setCloneSourceMonth(toMonthKey(date));
-                        }
-                      }}
-                      locale="th"
-                      dateFormat="MMMM yyyy"
-                      showMonthYearPicker
-                      customInput={
-                        <PickerButton
-                          className="win-input w-full px-3 py-2 text-center text-sm font-medium"
-                          placeholder="เลือกเดือนที่จะ clone"
-                        />
-                      }
-                    />
-                  </div>
                   <button
                     type="button"
-                    onClick={handleCloneMonth}
-                    disabled={cloneSaving}
-                    className="win-button-primary mt-3 px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={openCloneModal}
+                    className="win-button-primary mt-3 px-4 py-2 text-sm font-medium"
                   >
-                    {cloneSaving ? "กำลัง clone..." : `Clone จาก ${formatThaiMonthKey(cloneSourceMonth)}`}
+                    Clone จาก {formatThaiMonthKey(shiftMonthKey(selectedMonth, -1))}
                   </button>
                 </EmptyState>
               )}
@@ -1209,7 +1212,7 @@ function App() {
                 <div className="win-panel p-3">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-[#10324d]">รอจ่าย</h2>
-                    <span className="bg-amber-400 px-3 py-1 text-xs font-medium text-slate-950">
+                    <span data-money className="bg-amber-400 px-3 py-1 text-xs font-medium text-slate-950">
                       {formatMoney(pendingExpenseTotal)}
                     </span>
                   </div>
@@ -1287,7 +1290,7 @@ function App() {
                           <div className="flex flex-wrap gap-1.5">
                             {item.items.map((tagItem, index) => (
                               <span key={`${tagItem.title}-${index}`} className="bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
-                                {tagItem.title} {formatMoney(tagItem.amount)}
+                                {tagItem.title} <span data-money>{formatMoney(tagItem.amount)}</span>
                               </span>
                             ))}
                           </div>
@@ -1371,7 +1374,7 @@ function App() {
                     <div className="min-w-0">
                       <p className="truncate font-medium text-slate-900">{item.title}</p>
                       <p className="text-xs text-slate-500">
-                        {formatThaiDate(item.date)} • {item.type}
+                        {formatThaiDate(item.date)} • {item.type === "income" ? "รายรับ" : "รายจ่าย"}
                         {item.tag ? ` • ${item.tag}` : ""}
                       </p>
                     </div>
@@ -1433,9 +1436,9 @@ function App() {
                             {item.active ? "active" : "inactive"}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500">
-                          {item.type}
-                        </p>
+                        <div className="mt-1">
+                          <TypeBadge type={item.type} />
+                        </div>
                       </div>
                       <div className="flex items-end justify-between gap-3 border-t border-slate-200 pt-2">
                         <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">จำนวนเงิน</span>
@@ -1499,30 +1502,10 @@ function App() {
               </button>
             </div>
             <form className="mt-3 space-y-2.5" onSubmit={handleSaveTransaction}>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => updateTransactionForm("type", "expense")}
-                  className={
-                    transactionForm.type === "expense"
-                      ? "border border-[#a92f48] bg-[#e64c66] px-3 py-2.5 text-sm font-medium text-white"
-                      : "win-input px-3 py-2.5 text-sm"
-                  }
-                >
-                  Expense
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateTransactionForm("type", "income")}
-                  className={
-                    transactionForm.type === "income"
-                      ? "border border-[#007d7c] bg-[#00aba9] px-3 py-2.5 text-sm font-medium text-white"
-                      : "win-input px-3 py-2.5 text-sm"
-                  }
-                >
-                  Income
-                </button>
-              </div>
+              <TypeToggle
+                value={transactionForm.type}
+                onChange={(type) => updateTransactionForm("type", type)}
+              />
               <div className="flex flex-wrap gap-2">
                 {visibleShortcuts.map((shortcut) => (
                   <button
@@ -1542,13 +1525,10 @@ function App() {
                 placeholder="ชื่อรายการ"
                 className="win-input w-full px-3 py-2.5 text-sm"
               />
-              <input
-                type="text"
+              <TagInput
                 value={transactionForm.tag}
-                onChange={(event) => updateTransactionForm("tag", event.target.value)}
-                placeholder="แท็ก"
-                list="transaction-tags"
-                className="win-input w-full px-3 py-2.5 text-sm"
+                options={tagOptions}
+                onChange={(tag) => updateTransactionForm("tag", tag)}
               />
               <input
                 type="number"
@@ -1596,6 +1576,140 @@ function App() {
         </div>
       ) : null}
 
+      {cloneModalOpen ? (
+        <div className="fixed inset-0 z-30 flex items-end bg-[#083a5d]/55 lg:items-center lg:justify-center">
+          <div className="win-panel flex max-h-[90vh] w-full flex-col p-4 lg:max-w-lg">
+            <div className="mx-auto mb-3 h-1.5 w-14 bg-[#7db9de] lg:hidden" />
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-[#10324d]">
+                Clone ไป {formatThaiMonthKey(selectedMonth)}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setCloneModalOpen(false)}
+                className="win-button px-3 py-1 text-xs"
+              >
+                ปิด
+              </button>
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <span className="shrink-0 text-xs text-slate-500">จากเดือน</span>
+              <div className="flex min-w-0 flex-1 items-center border border-slate-300 bg-white">
+                <button
+                  type="button"
+                  onClick={() => selectCloneSource(shiftMonthKey(cloneSourceMonth, -1))}
+                  className="win-button min-w-[36px] border-0 border-r border-slate-300 px-2 py-1.5 text-sm"
+                >
+                  ‹
+                </button>
+                <div className="min-w-0 flex-1">
+                  <DatePicker
+                    selected={monthKeyToDate(cloneSourceMonth)}
+                    onChange={(date) => {
+                      if (date) {
+                        selectCloneSource(toMonthKey(date));
+                      }
+                    }}
+                    locale="th"
+                    dateFormat="MMMM yyyy"
+                    showMonthYearPicker
+                    customInput={
+                      <PickerButton
+                        className="win-input w-full border-0 px-3 py-1.5 text-center text-sm font-medium"
+                        placeholder="เลือกเดือนต้นทาง"
+                      />
+                    }
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => selectCloneSource(shiftMonthKey(cloneSourceMonth, 1))}
+                  className="win-button min-w-[36px] border-0 border-l border-slate-300 px-2 py-1.5 text-sm"
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+
+            {clonePlan.length ? (
+              <>
+                <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500">
+                    เลือก {cloneSelectedCount}/{clonePlan.length} รายการ
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCloneSelection(new Set(clonePlan.map((row) => row.item.id)))}
+                      className="win-button px-2.5 py-1"
+                    >
+                      เลือกทั้งหมด
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCloneSelection(new Set())}
+                      className="win-button px-2.5 py-1"
+                    >
+                      ไม่เลือก
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 min-h-0 flex-1 overflow-y-auto border border-slate-200 bg-white">
+                  {clonePlan.map(({ item, nextDate, exists }) => (
+                    <label
+                      key={item.id}
+                      className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0 hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={cloneSelection.has(item.id)}
+                        onChange={() => toggleCloneItem(item.id)}
+                        className="h-4 w-4 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="break-words text-sm font-medium text-slate-900">{item.title}</span>
+                          {item.tag ? (
+                            <span className={`border px-1.5 py-0.5 text-[10px] ${tagTone(item.tag)}`}>{item.tag}</span>
+                          ) : null}
+                          {exists ? (
+                            <span className="bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800">มีแล้วในเดือนนี้</span>
+                          ) : null}
+                        </div>
+                        <p className="text-[11px] text-slate-500">→ {formatThaiDate(nextDate)}</p>
+                      </div>
+                      <span
+                        data-money
+                        className={item.type === "income" ? "shrink-0 text-sm font-semibold text-cyan-700" : "shrink-0 text-sm font-semibold text-rose-600"}
+                      >
+                        {item.type === "income" ? "+" : "-"}
+                        {formatMoney(item.amount)}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="mt-3">
+                <EmptyState title={`${formatThaiMonthKey(cloneSourceMonth)} ไม่มีรายการ`} />
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleCloneMonth}
+              disabled={cloneSaving || !cloneSelectedCount}
+              className="win-button-primary mt-3 w-full px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cloneSaving
+                ? "กำลัง clone..."
+                : `Clone ${cloneSelectedCount} รายการ → ${formatThaiMonthKey(selectedMonth)}`}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {shortcutModalOpen ? (
         <div className="fixed inset-0 z-30 flex items-end bg-[#083a5d]/55 lg:items-center lg:justify-center">
           <div className="win-panel w-full p-4 lg:max-w-md">
@@ -1613,41 +1727,36 @@ function App() {
               </button>
             </div>
             <form className="mt-3 space-y-2.5" onSubmit={handleSaveShortcut}>
+              <TypeToggle
+                value={shortcutForm.type}
+                onChange={(type) => updateShortcutForm("type", type)}
+              />
               <input
                 type="text"
                 value={shortcutForm.title}
                 onChange={(event) => updateShortcutForm("title", event.target.value)}
                 placeholder="ชื่อ shortcut"
-                className="win-input w-full px-3 py-2 text-sm"
+                className="win-input w-full px-3 py-2.5 text-sm"
               />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <select
-                  value={shortcutForm.type}
-                  onChange={(event) => updateShortcutForm("type", event.target.value)}
-                  className="win-input win-select px-3 py-2 text-sm"
-                >
-                  <option value="expense">expense</option>
-                  <option value="income">income</option>
-                </select>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  pattern="[0-9]*"
-                  value={shortcutForm.defaultAmount}
-                  onChange={(event) => updateShortcutForm("defaultAmount", event.target.value)}
-                  placeholder="จำนวนเงินเริ่มต้น"
-                  className="win-input px-3 py-2 text-sm"
-                />
-              </div>
-              <label className="win-input flex items-center gap-2 px-3 py-2 text-sm text-[#10324d]">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                pattern="[0-9]*"
+                value={shortcutForm.defaultAmount}
+                onChange={(event) => updateShortcutForm("defaultAmount", event.target.value)}
+                placeholder="จำนวนเงินเริ่มต้น"
+                className="win-input w-full px-3 py-2.5 text-sm"
+              />
+              <label className="win-input flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm text-[#10324d]">
                 <input
                   type="checkbox"
                   checked={shortcutForm.active}
                   onChange={(event) => updateShortcutForm("active", event.target.checked)}
+                  className="h-4 w-4"
                 />
-                active
+                แสดงใน Quick Add (active)
               </label>
               <button
                 type="submit"
@@ -1700,6 +1809,140 @@ function App() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Tag field with an in-app dropdown of existing tags (replaces the browser's <datalist>). */
+function TagInput({ value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const inputRef = useRef(null);
+  const typed = value.trim();
+  const matches = options.filter((tag) => tag.toLowerCase().includes(typed.toLowerCase()));
+  const canCreate = typed && !options.some((tag) => tag === typed);
+  // Rows: existing tags first, then "add new" if the typed text isn't a tag yet.
+  const rows = [...matches.map((tag) => ({ tag, isNew: false })), ...(canCreate ? [{ tag: typed, isNew: true }] : [])];
+
+  function choose(tag) {
+    onChange(tag);
+    setOpen(false);
+    setActive(-1);
+  }
+
+  function onKeyDown(event) {
+    if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      setOpen(true);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActive((i) => Math.min(i + 1, rows.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (event.key === "Enter" && open && active >= 0 && rows[active]) {
+      event.preventDefault(); // don't submit the form
+      choose(rows[active].tag);
+    } else if (event.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex items-center">
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setOpen(true);
+            setActive(-1);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={onKeyDown}
+          placeholder="แท็ก"
+          role="combobox"
+          aria-expanded={open && rows.length > 0}
+          aria-autocomplete="list"
+          autoComplete="off"
+          className="win-input w-full px-3 py-2.5 pr-9 text-sm"
+        />
+        {value ? (
+          <button
+            type="button"
+            aria-label="ล้างแท็ก"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onChange("");
+              inputRef.current?.focus();
+            }}
+            className="absolute right-0 h-full px-3 text-sm text-slate-400 hover:text-slate-700"
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+      {open && rows.length ? (
+        <ul
+          role="listbox"
+          // mousedown fires before the input's blur; cancelling it keeps focus so the click lands on the row
+          onMouseDown={(event) => event.preventDefault()}
+          className="absolute left-0 right-0 top-full z-40 mt-px max-h-52 overflow-y-auto border border-slate-300 bg-white shadow-lg"
+        >
+          {rows.map((row, index) => (
+            <li
+              key={`${row.isNew ? "new" : "tag"}-${row.tag}`}
+              role="option"
+              aria-selected={index === active}
+              onClick={() => choose(row.tag)}
+              onMouseEnter={() => setActive(index)}
+              className={`flex cursor-pointer items-center gap-2 px-3 py-2 text-sm ${index === active ? "bg-blue-50" : ""}`}
+            >
+              {row.isNew ? (
+                <span className="text-slate-600">+ เพิ่มแท็กใหม่ “{row.tag}”</span>
+              ) : (
+                <>
+                  <span className={`border px-2 py-0.5 text-[11px] ${tagTone(row.tag)}`}>{row.tag}</span>
+                  {row.tag === value ? <span className="ml-auto text-xs text-slate-400">✓</span> : null}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** Expense / Income switch, shared by Quick Add and the shortcut form. */
+function TypeToggle({ value, onChange }) {
+  const option = (type, label, activeClass) => (
+    <button
+      type="button"
+      onClick={() => onChange(type)}
+      aria-pressed={value === type}
+      className={value === type ? `${activeClass} px-3 py-2.5 text-sm font-medium text-white` : "win-input px-3 py-2.5 text-sm"}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {option("expense", "Expense", "border border-[#a92f48] bg-[#e64c66]")}
+      {option("income", "Income", "border border-[#007d7c] bg-[#00aba9]")}
+    </div>
+  );
+}
+
+function TypeBadge({ type }) {
+  return type === "income" ? (
+    <span className="border border-cyan-100 bg-cyan-50 px-2 py-0.5 text-[10px] text-cyan-700">รายรับ</span>
+  ) : (
+    <span className="border border-rose-100 bg-rose-50 px-2 py-0.5 text-[10px] text-rose-700">รายจ่าย</span>
   );
 }
 
