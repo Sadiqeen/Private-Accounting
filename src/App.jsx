@@ -1212,7 +1212,7 @@ function App() {
                 <div className="win-panel p-3">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-[#10324d]">รอจ่าย</h2>
-                    <span className="bg-amber-400 px-3 py-1 text-xs font-medium text-slate-950">
+                    <span data-money className="bg-amber-400 px-3 py-1 text-xs font-medium text-slate-950">
                       {formatMoney(pendingExpenseTotal)}
                     </span>
                   </div>
@@ -1290,7 +1290,7 @@ function App() {
                           <div className="flex flex-wrap gap-1.5">
                             {item.items.map((tagItem, index) => (
                               <span key={`${tagItem.title}-${index}`} className="bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
-                                {tagItem.title} {formatMoney(tagItem.amount)}
+                                {tagItem.title} <span data-money>{formatMoney(tagItem.amount)}</span>
                               </span>
                             ))}
                           </div>
